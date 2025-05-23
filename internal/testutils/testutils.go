@@ -2,16 +2,19 @@ package testutils
 
 import (
 	"database/sql"
-	"log"
 	"os"
 	"testing"
 
 	_ "github.com/lib/pq"
-	"transaction-logger/internal/database"
 )
 
+// TestDB wraps a database connection for testing
+type TestDB struct {
+	*sql.DB
+}
+
 // SetupTestDB creates a new test database connection and runs migrations
-func SetupTestDB(t *testing.T) *database.Database {
+func SetupTestDB(t *testing.T) *TestDB {
 	t.Helper()
 	
 	testDB := os.Getenv("TEST_DB")
@@ -24,11 +27,8 @@ func SetupTestDB(t *testing.T) *database.Database {
 		t.Fatalf("Failed to connect to test database: %v", err)
 	}
 
-	// Create a new database instance
-	dbInstance := &database.Database{DB: db}
-
-	// Run migrations
-	if err := dbInstance.InitSchema(); err != nil {
+	// Initialize database schema
+	if err := initDBSchema(db); err != nil {
 		t.Fatalf("Failed to initialize test database schema: %v", err)
 	}
 
@@ -44,11 +44,46 @@ func SetupTestDB(t *testing.T) *database.Database {
 		db.Close()
 	})
 
-	return dbInstance
+	return &TestDB{db}
+}
+
+// initDBSchema initializes the database schema
+func initDBSchema(db *sql.DB) error {
+	// Create users table
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS users (
+			id TEXT PRIMARY KEY,
+			email TEXT UNIQUE NOT NULL,
+			password TEXT NOT NULL,
+			created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+			updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+		);
+	`)
+	if err != nil {
+		return err
+	}
+
+	// Create transactions table
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS transactions (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			sender_account TEXT NOT NULL,
+			receiver_account TEXT NOT NULL,
+			amount DECIMAL(15, 2) NOT NULL,
+			currency TEXT NOT NULL,
+			transaction_type TEXT NOT NULL,
+			status TEXT NOT NULL,
+			created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+			updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+		);
+	`)
+
+	return err
 }
 
 // CreateTestUser creates a test user and returns the user ID
-func CreateTestUser(t *testing.T, db *database.Database, email, password string) string {
+func CreateTestUser(t *testing.T, db *TestDB, email, password string) string {
 	t.Helper()
 
 	var userID string
