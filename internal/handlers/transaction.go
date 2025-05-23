@@ -19,15 +19,64 @@ func NewTransactionHandler(db *sql.DB) *TransactionHandler {
 	return &TransactionHandler{db: db}
 }
 
+// GetTransactionsResponse represents the paginated response for transactions
+type GetTransactionsResponse struct {
+	Data []models.Transaction `json:"data"`
+	Pagination struct {
+		Total       int `json:"total"`
+		Count       int `json:"count"`
+		PerPage     int `json:"per_page"`
+		CurrentPage int `json:"current_page"`
+		TotalPages  int `json:"total_pages"`
+		HasMore     bool `json:"has_more"`
+	} `json:"pagination"`
+}
+
 func (h *TransactionHandler) GetTransactions(w http.ResponseWriter, r *http.Request) {
 	// Get user ID from context (set by AuthMiddleware)
 	userID := r.Context().Value("userID").(string)
 
+	// Parse query parameters with defaults
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	if pageSize <= 0 {
+		pageSize = 20 // Default page size
+	} else if pageSize > 100 {
+		pageSize = 100 // Max page size
+	}
+	offset := (page - 1) * pageSize
+
+	// Get total count of transactions for this user
+	var total int
+	err := h.db.QueryRow(
+		`SELECT COUNT(*) FROM transactions WHERE user_id = $1`,
+		userID,
+	).Scan(&total)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate total pages
+	totalPages := total / pageSize
+	if total%pageSize > 0 {
+		totalPages++
+	}
+
+	// Get paginated transactions
 	rows, err := h.db.Query(
 		`SELECT id, timestamp, sender_account, receiver_account, 
-		  amount, currency, transaction_type, status, user_id 
-		  FROM transactions WHERE user_id = $1`,
+		amount, currency, transaction_type, status, user_id 
+		FROM transactions WHERE user_id = $1
+		ORDER BY timestamp DESC
+		LIMIT $2 OFFSET $3`,
 		userID,
+		pageSize,
+		offset,
 	)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -55,8 +104,28 @@ func (h *TransactionHandler) GetTransactions(w http.ResponseWriter, r *http.Requ
 		transactions = append(transactions, t)
 	}
 
+	// Prepare response
+	response := GetTransactionsResponse{
+		Data: transactions,
+		Pagination: struct {
+			Total       int  `json:"total"`
+			Count       int  `json:"count"`
+			PerPage     int  `json:"per_page"`
+			CurrentPage int  `json:"current_page"`
+			TotalPages  int  `json:"total_pages"`
+			HasMore     bool `json:"has_more"`
+		}{
+			Total:       total,
+			Count:       len(transactions),
+			PerPage:     pageSize,
+			CurrentPage: page,
+			TotalPages:  totalPages,
+			HasMore:     page < totalPages,
+		},
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(transactions)
+	json.NewEncoder(w).Encode(response)
 }
 
 

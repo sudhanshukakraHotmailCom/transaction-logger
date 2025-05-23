@@ -2,22 +2,12 @@
 
 A Go-based microservice for logging and managing financial transactions with a PostgreSQL backend, featuring JWT-based authentication.
 
-## Features
+## Quick Start
 
-- User registration and authentication with JWT
-- Secure transaction management with user isolation
-- Create and store transaction records
-- Generate sample transaction data
-- RESTful API for transaction management
-- Containerized with Docker
-- PostgreSQL database integration
-
-## Prerequisites
+### Prerequisites
 
 - Docker and Docker Compose
-- Go 1.21 or later (only needed for local development without Docker)
-
-## Getting Started
+- (Optional) Go 1.21+ for local development
 
 ### Using Docker Compose (Recommended)
 
@@ -32,105 +22,140 @@ A Go-based microservice for logging and managing financial transactions with a P
    docker-compose up --build
    ```
 
-   This will:
-   - Build the Go application
-   - Start a PostgreSQL database
-   - Run the transaction logger service on port 8080
+This will:
+- Build the Go application
+- Start a PostgreSQL database
+- Run the transaction logger service on port 8080
 
-## Authentication
+### Manual Setup
 
-All API endpoints except `/register` and `/login` require a valid JWT token in the `Authorization` header:
+1. Install dependencies:
+   ```bash
+   go mod download
+   ```
+
+2. Set up environment variables:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your configuration
+   ```
+
+3. Start the database:
+   ```bash
+   docker-compose up -d db
+   ```
+
+4. Run migrations:
+   ```bash
+   go run cmd/server/main.go migrate
+   ```
+
+5. Start the server:
+   ```bash
+   go run cmd/server/main.go serve
+   ```
+
+## API Usage
+
+### Authentication
+
+All API endpoints except `/register` and `/login` require a valid JWT token:
 
 ```
 Authorization: Bearer <your-jwt-token>
 ```
 
-### API Endpoints
+### Available Endpoints
 
 #### Authentication
 - `POST /register` - Register a new user
-- `POST /login` - Login and get a JWT token
+- `POST /login` - Authenticate and get JWT token
 
-#### Transactions (Requires Authentication)
-- `GET /transactions` - Get all transactions for the authenticated user
-- `POST /transactions` - Create a new transaction for the authenticated user
-- `POST /transactions/generate` - Generate sample transactions for the authenticated user
+#### Features
 
-#### Example: Register a New User
+- User authentication with JWT
+- Create and retrieve transactions with pagination support
+- Transaction validation
+- Sample data generation for testing
+- RESTful API endpoints
 
+#### Transactions
+- `POST /transactions` - Create a new transaction
+- `GET /transactions` - List all transactions for the authenticated user
+
+## Pagination
+
+The API supports pagination for transaction listings with the following query parameters:
+
+- `page` - The page number to retrieve (default: 1)
+- `page_size` - Number of items per page (default: 20, max: 100)
+
+Example request:
 ```http
-POST /register HTTP/1.1
-Content-Type: application/json
+GET /api/transactions?page=2&page_size=10
+```
 
+Example response:
+```json
 {
-  "email": "user@example.com",
-  "password": "securepassword123"
+  "data": [
+    {
+      "id": "...",
+      "timestamp": "...",
+      "sender_account": "...",
+      "receiver_account": "...",
+      "amount": 100.5,
+      "currency": "USD",
+      "transaction_type": "Transfer",
+      "status": "Completed"
+    }
+  ],
+  "pagination": {
+    "total": 42,
+    "count": 10,
+    "per_page": 10,
+    "current_page": 2,
+    "total_pages": 5,
+    "has_more": true
+  }
 }
 ```
 
-#### Example: Login
-
-```http
-POST /login HTTP/1.1
-Content-Type: application/json
-
-{
-  "email": "user@example.com",
-  "password": "securepassword123"
-}
-```
-
-#### Example: Create a Transaction (Authenticated)
-
-```http
-POST /transactions HTTP/1.1
-Content-Type: application/json
-Authorization: Bearer <your-jwt-token>
-
-{
-  "sender_account": "ACC12345678",
-  "receiver_account": "ACC87654321",
-  "amount": 100.50,
-  "currency": "USD",
-  "transaction_type": "Transfer"
-}
-```
-
-Note: The `status` field is automatically set to "Completed" by the server.
-
-## Development
-
-### Running Tests
+### Example: Create a Transaction
 
 ```bash
-go test -v ./...
+curl -X POST http://localhost:8080/transactions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -d '{
+    "sender_account": "ACC123456",
+    "receiver_account": "ACC789012",
+    "amount": 100.50,
+    "currency": "USD",
+    "transaction_type": "Transfer"
+  }'
 ```
+
+## Documentation
+
+- [Detailed Documentation](DETAILED_DOCUMENTATION.md) - Project structure, components, and API reference
+- [Test Setup](TEST_SETUP.md) - Testing instructions and guidelines
+
+## Configuration
 
 ### Environment Variables
 
-### Database
+#### Database
 - `POSTGRES_HOST`: Database host (default: localhost)
 - `POSTGRES_PORT`: Database port (default: 5432)
 - `POSTGRES_USER`: Database user (default: postgres)
 - `POSTGRES_PASSWORD`: Database password (default: postgres)
 - `POSTGRES_DB`: Database name (default: transaction_logger)
 
-### Server
+#### Server
 - `PORT`: HTTP server port (default: 8080)
 - `JWT_SECRET`: Secret key for JWT token generation (required in production)
 
-## Running Migrations
-
-Database migrations are automatically applied when the application starts. For manual migrations:
-
-```bash
-# Apply migrations
-cat migrations/*.up.sql | psql $DATABASE_URL
-
-# Rollback last migration (if needed)
-cat migrations/002_add_user_id_to_transactions.down.sql | psql $DATABASE_URL
-```
-
 ## License
 
-MIT
+MIT License - See [LICENSE](LICENSE) for details.
